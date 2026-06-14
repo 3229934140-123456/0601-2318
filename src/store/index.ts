@@ -65,6 +65,8 @@ interface AppState {
   }) => Alert[];
   processAlert: (alertId: string, action: string, remark: string) => void;
   escalateAlert: (alertId: string) => void;
+  generateAutoAlerts: () => void;
+  autoEscalateAlerts: () => void;
 
   getPendingApprovals: () => ApprovalProcess[];
   getApprovalById: (id: string) => ApprovalProcess | undefined;
@@ -88,7 +90,7 @@ interface AppState {
     success: boolean;
     extractedData: LivestockPlan[];
   };
-  calculateForecast: (farmId: string) => ForecastData;
+  calculateForecast: (farmId: string, planData?: LivestockPlan[]) => ForecastData;
   getForecast: (farmId: string) => ForecastData;
 
   simulateRealtimeUpdate: () => void;
@@ -136,10 +138,19 @@ export const useAppStore = create<AppState>()(
         const state = get();
         let result = [...state.farms];
 
-        if (state.user?.role === 'provincial' && state.user.province) {
-          result = result.filter((f) => f.province === state.user!.province);
-        } else if (state.user?.role === 'farm_owner' && state.user.farmId) {
-          result = result.filter((f) => f.id === state.user!.farmId);
+        const user = state.user;
+        if (user) {
+          if (user.role === 'provincial' && user.province) {
+            result = result.filter((f) => f.province === user.province);
+          } else if (user.role === 'municipal' && user.province && user.city) {
+            result = result.filter((f) => f.province === user.province && f.city === user.city);
+          } else if (user.role === 'county_epd' && user.province && user.city) {
+            result = result.filter((f) => f.province === user.province && f.city === user.city);
+          } else if (user.role === 'provincial_agri' && user.province) {
+            result = result.filter((f) => f.province === user.province);
+          } else if (user.role === 'farm_owner' && user.farmId) {
+            result = result.filter((f) => f.id === user.farmId);
+          }
         }
 
         if (filters?.province) {
@@ -191,7 +202,21 @@ export const useAppStore = create<AppState>()(
       },
 
       getAlerts: (filters) => {
-        let result = [...get().alerts];
+        const state = get();
+        let result = [...state.alerts];
+
+        const user = state.user;
+        if (user) {
+          const visibleFarmIds = new Set(state.farms.filter((f) => {
+            if (user.role === 'national') return true;
+            if (user.role === 'provincial' && user.province) return f.province === user.province;
+            if ((user.role === 'municipal' || user.role === 'county_epd') && user.province && user.city) return f.province === user.province && f.city === user.city;
+            if (user.role === 'provincial_agri' && user.province) return f.province === user.province;
+            if (user.role === 'farm_owner' && user.farmId) return f.id === user.farmId;
+            return true;
+          }).map((f) => f.id));
+          result = result.filter((a) => visibleFarmIds.has(a.farmId));
+        }
 
         if (filters?.level) {
           result = result.filter((a) => a.level === filters.level);
@@ -285,13 +310,154 @@ export const useAppStore = create<AppState>()(
         set({ alerts, approvals: [...state.approvals, newApproval] });
       },
 
+      generateAutoAlerts: () => {
+        const state = get();
+        const now = Date.now();
+        const newAlerts: Alert[] = [];
+        const existingPendingFarmIds = new Set(
+          state.alerts
+            .filter((a) => a.status === 'pending' || a.status === 'processing')
+            .map((a) => a.farmId)
+        );
+
+        state.farms.forEach((farm) => {
+          if (existingPendingFarmIds.has(farm.id)) return;
+
+          const shouldAlertFacility = farm.facilityComplianceRate < 70;
+          const shouldAlertEnvironment = farm.environmentalRiskIndex > 60;
+
+          if (shouldAlertFacility || shouldAlertEnvironment) {
+            const durationDays = shouldAlertFacility ? 3 : 1;
+            const type = shouldAlertFacility ? 'facility' : 'environment';
+            const triggerCondition = shouldAlertFacility
+              ? `连续${durationDays}天设施达标率低于70%`
+              : '环境风险指数持续上升超阈值';
+            const triggerValue = shouldAlertFacility
+              ? parseFloat(farm.facilityComplianceRate.toFixed(1))
+              : parseFloat(farm.environmentalRiskIndex.toFixed(1));
+            const threshold = shouldAlertFacility ? 70 : 60;
+
+            newAlerts.push({
+              id: `alert_auto_${farm.id}_${now}`,
+              farmId: farm.id,
+              farmName: farm.name,
+              level: 'level1',
+              type,
+              triggerCondition,
+              triggerValue,
+              threshold,
+              durationDays,
+              status: 'pending',
+              createdAt: now,
+              notifiedUsers: ['user_003', 'user_004'],
+              processingHistory: [
+                {
+                  action: '预警生成',
+                  operator: 'system',
+                  timestamp: now,
+                  remark: `自动检测：${triggerCondition}，当前值${triggerValue}`,
+                },
+              ],
+            });
+          }
+        });
+
+        if (newAlerts.length > 0) {
+          set({ alerts: [...newAlerts, ...state.alerts] });
+        }
+      },
+
+      autoEscalateAlerts: () => {
+        const state = get();
+        const now = Date.now();
+        const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+        let alertsChanged = false;
+        let newApprovals: ApprovalProcess[] = [];
+
+        const updatedAlerts = state.alerts.map((alert) => {
+          if (alert.level !== 'level1' || alert.status !== 'pending') return alert;
+          if (now - alert.createdAt < fiveDaysMs) return alert;
+
+          const farm = state.farms.find((f) => f.id === alert.farmId);
+          const stillBelowThreshold = farm
+            ? (alert.type === 'facility' && farm.facilityComplianceRate < 70)
+              || (alert.type === 'environment' && farm.environmentalRiskIndex > 60)
+              || (alert.type === 'comprehensive' && (farm.facilityComplianceRate < 70 || farm.environmentalRiskIndex > 60))
+            : true;
+
+          if (!stillBelowThreshold) {
+            return {
+              ...alert,
+              status: 'resolved' as const,
+              processingHistory: [
+                ...alert.processingHistory,
+                {
+                  action: '自动恢复',
+                  operator: 'system',
+                  timestamp: now,
+                  remark: '指标已恢复至正常范围，自动解除预警',
+                },
+              ],
+            };
+          }
+
+          alertsChanged = true;
+          newApprovals.push({
+            id: `approval_auto_${alert.farmId}_${now}`,
+            alertId: alert.id,
+            farmId: alert.farmId,
+            adjustmentType: alert.type === 'facility' ? 'process_change' : 'production_limit',
+            proposedPlan: '5天整改期满未改善，建议调整处理工艺或限制生产规模',
+            currentStage: 'farm_owner',
+            stages: [
+              { id: 'stage_1', stageName: 'farm_owner', status: 'pending' },
+              { id: 'stage_2', stageName: 'county_epd', status: 'pending' },
+              { id: 'stage_3', stageName: 'provincial_agri', status: 'pending' },
+            ],
+            createdAt: now,
+          });
+
+          return {
+            ...alert,
+            level: 'level2' as const,
+            status: 'escalated' as const,
+            processingHistory: [
+              ...alert.processingHistory,
+              {
+                action: '自动升级二级预警',
+                operator: 'system',
+                timestamp: now,
+                remark: '5天整改期满未改善，系统自动升级为二级预警并启动三级审批流程',
+              },
+            ],
+          };
+        });
+
+        if (alertsChanged) {
+          set({
+            alerts: updatedAlerts,
+            approvals: [...state.approvals, ...newApprovals],
+          });
+        }
+      },
+
       getPendingApprovals: () => {
         const state = get();
         const user = state.user;
         if (!user) return [];
 
+        const visibleFarmIds = new Set(state.farms.filter((f) => {
+          if (user.role === 'national') return true;
+          if (user.role === 'provincial' && user.province) return f.province === user.province;
+          if ((user.role === 'municipal' || user.role === 'county_epd') && user.province && user.city) return f.province === user.province && f.city === user.city;
+          if (user.role === 'provincial_agri' && user.province) return f.province === user.province;
+          if (user.role === 'farm_owner' && user.farmId) return f.id === user.farmId;
+          return true;
+        }).map((f) => f.id));
+
         let result = state.approvals.filter(
           (a) => a.currentStage !== 'completed' && a.currentStage !== 'rejected'
+            && visibleFarmIds.has(a.farmId)
         );
 
         if (user.role === 'farm_owner') {
@@ -376,22 +542,46 @@ export const useAppStore = create<AppState>()(
       },
 
       getReports: () => {
-        return [...get().reports].sort((a, b) => b.endDate - a.endDate);
+        const state = get();
+        const user = state.user;
+        let result = [...state.reports];
+
+        if (user && user.role !== 'national') {
+          if (user.role === 'provincial' || user.role === 'provincial_agri') {
+            result = result.filter((r) =>
+              r.scope.type === 'national' || r.scope.type === 'province'
+            );
+          } else if (user.role === 'municipal' || user.role === 'county_epd') {
+            result = result.filter((r) =>
+              r.scope.type === 'national' || r.scope.type === 'province' || r.scope.type === 'city'
+            );
+          } else if (user.role === 'farm_owner') {
+            result = result.filter((r) =>
+              r.scope.type === 'national' || r.scope.type === 'province' || r.scope.type === 'city'
+            );
+          }
+        }
+
+        return result.sort((a, b) => b.endDate - a.endDate);
       },
 
       getReportById: (id) => {
         return get().reports.find((r) => r.id === id);
       },
 
-      uploadPlan: (farmId, data) => {
+      uploadPlan: (farmId: string, data: LivestockPlan[]) => {
+        const state = get();
+        const newForecastData = { ...state.forecastData };
+        newForecastData[farmId] = generateForecastData(farmId, data);
+        set({ forecastData: newForecastData });
         return {
           success: true,
           extractedData: data,
         };
       },
 
-      calculateForecast: (farmId) => {
-        const forecast = generateForecastData(farmId);
+      calculateForecast: (farmId, planData) => {
+        const forecast = generateForecastData(farmId, planData);
         set((state) => ({
           forecastData: { ...state.forecastData, [farmId]: forecast },
         }));
@@ -417,6 +607,9 @@ export const useAppStore = create<AppState>()(
         set({
           realtimeDataMap: { ...state.realtimeDataMap, ...newDataMap },
         });
+
+        get().generateAutoAlerts();
+        get().autoEscalateAlerts();
       },
     }),
     {

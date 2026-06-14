@@ -12,6 +12,7 @@ import {
   HeatmapItem,
   NationalMetrics,
   ForecastData,
+  LivestockPlan,
 } from '../types';
 
 export const provinces: Province[] = [
@@ -493,7 +494,7 @@ export const nationalMetrics: NationalMetrics = {
   activeFarms: 12580,
 };
 
-export const generateForecastData = (farmId: string): ForecastData => {
+export const generateForecastData = (farmId: string, planData?: LivestockPlan[]): ForecastData => {
   const farm = farms.find((f) => f.id === farmId);
   const baseline = farm?.livestockCount || 1000;
   const forecastDays = 90;
@@ -504,16 +505,63 @@ export const generateForecastData = (farmId: string): ForecastData => {
   const wasteCoefficient =
     livestockTypes.find((t) => t.type === farm?.livestockType)?.wasteCoefficient || 5.2;
 
-  for (let i = 0; i < forecastDays; i++) {
-    const growthFactor = 1 + (i / forecastDays) * 0.3;
-    const planned = Math.floor(baseline * growthFactor);
-    plannedLivestockCount.push(planned);
-    const predicted = parseFloat((planned * wasteCoefficient).toFixed(2));
-    predictedWasteProduction.push(predicted);
-    capacityGap.push(parseFloat(Math.max(0, predicted - treatmentCapacity).toFixed(2)));
+  if (planData && planData.length > 0) {
+    const sorted = [...planData].sort((a, b) => a.month - b.month);
+    for (let i = 0; i < forecastDays; i++) {
+      const currentMonth = new Date().getMonth() + Math.floor(i / 30);
+      const monthIndex = currentMonth % 12;
+      const nextMonthIndex = (monthIndex + 1) % 12;
+      const planCurrent = sorted.find((p) => p.month === monthIndex + 1);
+      const planNext = sorted.find((p) => p.month === nextMonthIndex + 1);
+      const countCurrent = planCurrent?.livestockCount || baseline;
+      const countNext = planNext?.livestockCount || countCurrent;
+      const dayInMonth = i % 30;
+      const fraction = dayInMonth / 30;
+      const interpolated = Math.round(countCurrent + (countNext - countCurrent) * fraction);
+      plannedLivestockCount.push(interpolated);
+      const predicted = parseFloat((interpolated * wasteCoefficient / 1000).toFixed(2));
+      predictedWasteProduction.push(predicted);
+      capacityGap.push(parseFloat(Math.max(0, predicted - treatmentCapacity).toFixed(2)));
+    }
+  } else {
+    for (let i = 0; i < forecastDays; i++) {
+      const growthFactor = 1 + (i / forecastDays) * 0.3;
+      const planned = Math.floor(baseline * growthFactor);
+      plannedLivestockCount.push(planned);
+      const predicted = parseFloat((planned * wasteCoefficient).toFixed(2));
+      predictedWasteProduction.push(predicted);
+      capacityGap.push(parseFloat(Math.max(0, predicted - treatmentCapacity).toFixed(2)));
+    }
   }
 
   const hasGap = capacityGap.some((g) => g > 0);
+  const gapDays = capacityGap.filter((g) => g > 0).length;
+  const maxGap = capacityGap.length > 0 ? Math.max(...capacityGap) : 0;
+
+  const recommendations = hasGap
+    ? [
+        {
+          id: 'rec_001',
+          type: 'expansion' as const,
+          title: '处理设施扩建方案',
+          description:
+            `建议新增一套膜处理系统，处理能力提升${Math.ceil(maxGap / treatmentCapacity * 100)}%，预计投资${Math.ceil(maxGap / treatmentCapacity * 300)}万元，建设周期3个月`,
+          cost: Math.ceil(maxGap / treatmentCapacity * 300) * 10000,
+          benefit: `处理能力提升${Math.ceil(maxGap / treatmentCapacity * 100)}%，消除未来90天${gapDays}天的处理缺口`,
+          roi: parseFloat((1.5 + maxGap / treatmentCapacity * 3).toFixed(1)),
+        },
+        {
+          id: 'rec_002',
+          type: 'transport' as const,
+          title: '粪污外运方案',
+          description:
+            `与周边有机肥厂签订外运协议，日均外运${Math.ceil(maxGap)}吨，运输成本约80元/吨`,
+          cost: Math.ceil(maxGap * 80 * 365),
+          benefit: '快速解决处理能力不足问题，无需固定资产投入',
+          roi: parseFloat((1.2 + maxGap / treatmentCapacity * 2).toFixed(1)),
+        },
+      ]
+    : [];
 
   return {
     farmId,
@@ -524,29 +572,6 @@ export const generateForecastData = (farmId: string): ForecastData => {
     predictedWasteProduction,
     treatmentCapacity,
     capacityGap,
-    recommendations: hasGap
-      ? [
-          {
-            id: 'rec_001',
-            type: 'expansion',
-            title: '处理设施扩建方案',
-            description:
-              '建议新增一套膜处理系统，处理能力提升50%，预计投资150万元，建设周期3个月',
-            cost: 1500000,
-            benefit: '处理能力提升50%，可满足未来2年发展需求',
-            roi: 2.3,
-          },
-          {
-            id: 'rec_002',
-            type: 'transport',
-            title: '粪污外运方案',
-            description:
-              '与周边有机肥厂签订外运协议，日均外运30吨，运输成本约80元/吨',
-            cost: 720000,
-            benefit: '快速解决处理能力不足问题，无需固定资产投入',
-            roi: 1.8,
-          },
-        ]
-      : [],
+    recommendations,
   };
 };

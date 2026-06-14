@@ -23,7 +23,7 @@ import {
   CloseCircleOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppStore } from '../store';
 import { provinces, processTypes, livestockTypes } from '../mock/data';
 import type { ColumnsType } from 'antd/es/table';
@@ -35,11 +35,29 @@ const { Option } = Select;
 
 const Monitor = () => {
   const navigate = useNavigate();
-  const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
-  const [selectedScale, setSelectedScale] = useState<string | undefined>();
-  const [selectedProcess, setSelectedProcess] = useState<string | undefined>();
-  const [selectedRisk, setSelectedRisk] = useState<string | undefined>();
-  const [searchText, setSearchText] = useState('');
+  const [urlParams, setUrlParams] = useSearchParams();
+
+  const [selectedProvince, setSelectedProvince] = useState<string | undefined>(urlParams.get('province') || undefined);
+  const [selectedScale, setSelectedScale] = useState<string | undefined>(urlParams.get('scale') || undefined);
+  const [selectedProcess, setSelectedProcess] = useState<string | undefined>(urlParams.get('process') || undefined);
+  const [selectedRisk, setSelectedRisk] = useState<string | undefined>(urlParams.get('risk') || undefined);
+  const [searchText, setSearchText] = useState(urlParams.get('search') || '');
+
+  const syncParams = (p: string, s: string, pr: string, r: string, q: string) => {
+    const sp = new URLSearchParams();
+    if (p) sp.set('province', p);
+    if (s) sp.set('scale', s);
+    if (pr) sp.set('process', pr);
+    if (r) sp.set('risk', r);
+    if (q) sp.set('search', q);
+    setUrlParams(sp, { replace: true });
+  };
+
+  const handleSetProvince = (v: string | undefined) => { setSelectedProvince(v); syncParams(v || '', selectedScale || '', selectedProcess || '', selectedRisk || '', searchText); };
+  const handleSetScale = (v: string | undefined) => { setSelectedScale(v); syncParams(selectedProvince || '', v || '', selectedProcess || '', selectedRisk || '', searchText); };
+  const handleSetProcess = (v: string | undefined) => { setSelectedProcess(v); syncParams(selectedProvince || '', selectedScale || '', v || '', selectedRisk || '', searchText); };
+  const handleSetRisk = (v: string | undefined) => { setSelectedRisk(v); syncParams(selectedProvince || '', selectedScale || '', selectedProcess || '', v || '', searchText); };
+  const handleSetSearch = (v: string) => { setSearchText(v); syncParams(selectedProvince || '', selectedScale || '', selectedProcess || '', selectedRisk || '', v); };
   const [detailModal, setDetailModal] = useState<{
     visible: boolean;
     farm: Farm | null;
@@ -220,7 +238,7 @@ const Monitor = () => {
           <Button
             type="link"
             size="small"
-            onClick={() => navigate(`/monitor/farm/${record.id}`)}
+            onClick={() => navigate(`/farm/${record.id}?from=monitor`)}
           >
             详情
           </Button>
@@ -462,14 +480,15 @@ const Monitor = () => {
             prefix={<SearchOutlined />}
             style={{ width: 280 }}
             value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
+            onChange={(e) => handleSetSearch(e.target.value)}
             allowClear
           />
           <Select
             placeholder="选择省份"
             allowClear
             style={{ width: 140 }}
-            onChange={setSelectedProvince}
+            value={selectedProvince}
+            onChange={handleSetProvince}
           >
             {provinces.map((p) => (
               <Option key={p.code} value={p.code}>
@@ -481,7 +500,8 @@ const Monitor = () => {
             placeholder="养殖规模"
             allowClear
             style={{ width: 120 }}
-            onChange={setSelectedScale}
+            value={selectedScale}
+            onChange={handleSetScale}
           >
             <Option value="small">小型</Option>
             <Option value="medium">中型</Option>
@@ -491,7 +511,8 @@ const Monitor = () => {
             placeholder="处理工艺"
             allowClear
             style={{ width: 140 }}
-            onChange={setSelectedProcess}
+            value={selectedProcess}
+            onChange={handleSetProcess}
           >
             {processTypes.map((p) => (
               <Option key={p.code} value={p.code}>
@@ -503,7 +524,8 @@ const Monitor = () => {
             placeholder="风险等级"
             allowClear
             style={{ width: 120 }}
-            onChange={setSelectedRisk}
+            value={selectedRisk}
+            onChange={handleSetRisk}
           >
             <Option value="normal">正常</Option>
             <Option value="warning">预警</Option>
@@ -518,6 +540,7 @@ const Monitor = () => {
                 setSelectedScale(undefined);
                 setSelectedProcess(undefined);
                 setSelectedRisk(undefined);
+                setUrlParams({}, { replace: true });
               }}
             >
               重置

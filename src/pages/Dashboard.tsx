@@ -23,7 +23,7 @@ const Dashboard = () => {
   );
   const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
   const [selectedProcess, setSelectedProcess] = useState<string | undefined>();
-  const { nationalMetrics, heatmapData, getFarms, getAlerts, simulateRealtimeUpdate } =
+  const { nationalMetrics, heatmapData, getFarms, getAlerts, simulateRealtimeUpdate, user } =
     useAppStore();
 
   useEffect(() => {
@@ -37,6 +37,20 @@ const Dashboard = () => {
     () => getFarms({ province: selectedProvince, processType: selectedProcess }),
     [getFarms, selectedProvince, selectedProcess]
   );
+
+  const scopedMetrics = useMemo(() => {
+    const util = farms.length > 0
+      ? farms.reduce((s, f) => s + f.resourceUtilizationRate, 0) / farms.length
+      : nationalMetrics.resourceUtilizationRate;
+    const comp = farms.length > 0
+      ? farms.reduce((s, f) => s + f.facilityComplianceRate, 0) / farms.length
+      : nationalMetrics.facilityComplianceRate;
+    const risk = farms.length > 0
+      ? farms.reduce((s, f) => s + f.environmentalRiskIndex, 0) / farms.length
+      : nationalMetrics.environmentalRiskIndex;
+    const active = farms.filter((f) => f.status === 'active').length;
+    return { resourceUtilizationRate: parseFloat(util.toFixed(1)), facilityComplianceRate: parseFloat(comp.toFixed(1)), environmentalRiskIndex: parseFloat(risk.toFixed(1)), activeFarms: active };
+  }, [farms, nationalMetrics]);
 
   const topRiskFarms = useMemo(
     () =>
@@ -341,8 +355,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <Statistic
-              title="全国资源化利用率"
-              value={nationalMetrics.resourceUtilizationRate}
+              title={user?.role === 'national' ? '全国资源化利用率' : '辖区资源化利用率'}
+              value={scopedMetrics.resourceUtilizationRate}
               precision={1}
               suffix="%"
               valueStyle={{ color: '#0f766e', fontSize: '32px', fontWeight: 700 }}
@@ -350,7 +364,7 @@ const Dashboard = () => {
                 <ArrowUpOutlined
                   className={cn(
                     'text-lg',
-                    nationalMetrics.resourceUtilizationRate > 80
+                    scopedMetrics.resourceUtilizationRate > 80
                       ? 'text-green-500'
                       : 'text-red-500'
                   )}
@@ -371,8 +385,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <Statistic
-              title="设施运行达标率"
-              value={nationalMetrics.facilityComplianceRate}
+              title={user?.role === 'national' ? '设施运行达标率' : '辖区设施运行达标率'}
+              value={scopedMetrics.facilityComplianceRate}
               precision={1}
               suffix="%"
               valueStyle={{ color: '#059669', fontSize: '32px', fontWeight: 700 }}
@@ -380,7 +394,7 @@ const Dashboard = () => {
                 <CheckCircleOutlined
                   className={cn(
                     'text-lg',
-                    nationalMetrics.facilityComplianceRate > 85
+                    scopedMetrics.facilityComplianceRate > 85
                       ? 'text-green-500'
                       : 'text-yellow-500'
                   )}
@@ -401,11 +415,11 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <Statistic
-              title="环境风险指数"
-              value={nationalMetrics.environmentalRiskIndex}
+              title={user?.role === 'national' ? '环境风险指数' : '辖区环境风险指数'}
+              value={scopedMetrics.environmentalRiskIndex}
               precision={1}
               valueStyle={{
-                color: nationalMetrics.environmentalRiskIndex > 50 ? '#dc2626' : '#f59e0b',
+                color: scopedMetrics.environmentalRiskIndex > 50 ? '#dc2626' : '#f59e0b',
                 fontSize: '32px',
                 fontWeight: 700,
               }}
@@ -413,7 +427,7 @@ const Dashboard = () => {
                 <WarningOutlined
                   className={cn(
                     'text-lg',
-                    nationalMetrics.environmentalRiskIndex > 50
+                    scopedMetrics.environmentalRiskIndex > 50
                       ? 'text-red-500'
                       : 'text-yellow-500'
                   )}
@@ -434,8 +448,8 @@ const Dashboard = () => {
             styles={{ body: { padding: '24px' } }}
           >
             <Statistic
-              title="在产养殖场数"
-              value={nationalMetrics.activeFarms}
+              title={user?.role === 'national' ? '在产养殖场数' : '辖内在产养殖场数'}
+              value={scopedMetrics.activeFarms}
               valueStyle={{ color: '#0891b2', fontSize: '32px', fontWeight: 700 }}
               prefix={<EnvironmentOutlined className="text-lg text-cyan-500" />}
             />

@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Card,
   Descriptions,
@@ -36,6 +36,8 @@ import type { TransportRecord } from '../types';
 const FarmDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const fromPage = searchParams.get('from') || 'monitor';
   const { getFarmById, getHistoryData, getFertilizerData, getTransportRecords } =
     useAppStore();
 
@@ -693,7 +695,7 @@ const FarmDetail = () => {
       <div className="flex items-center gap-4">
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/monitor')}
+          onClick={() => navigate(fromPage === 'alert' ? '/alert' : '/monitor')}
         >
           返回列表
         </Button>

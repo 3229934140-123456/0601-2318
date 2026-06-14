@@ -84,7 +84,7 @@ const Forecast: React.FC = () => {
 
         const extractedPlan: LivestockPlan[] = jsonData.map((row, index) => ({
           month: row['月份'] || row['month'] || index + 1,
-          livestockCount: row['存栏量'] || row['livestockCount'] || 0,
+          livestockCount: Number(row['存栏量'] || row['livestockCount'] || 0),
           notes: row['备注'] || row['notes'] || '',
         }));
 
@@ -92,9 +92,9 @@ const Forecast: React.FC = () => {
           const result = uploadPlan(selectedFarm.id, extractedPlan);
           if (result.success) {
             setLivestockPlan(result.extractedData);
-            const newForecast = calculateForecast(selectedFarm.id);
+            const newForecast = calculateForecast(selectedFarm.id, extractedPlan);
             setForecastData(newForecast);
-            message.success('年度计划上传成功，已自动提取存栏数据');
+            message.success('年度计划上传成功，已按新存栏数据重新计算预测');
             onSuccess?.();
           } else {
             message.error('上传失败');

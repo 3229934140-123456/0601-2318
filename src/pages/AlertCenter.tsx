@@ -119,7 +119,7 @@ const AlertCenter = () => {
       ellipsis: true,
       render: (text, record) => (
         <a
-          onClick={() => navigate(`/monitor/farm/${record.farmId}`)}
+          onClick={() => navigate(`/farm/${record.farmId}?from=alert`)}
           className="font-medium"
         >
           {text}
