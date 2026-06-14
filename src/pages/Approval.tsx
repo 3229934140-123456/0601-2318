@@ -51,7 +51,7 @@ const stageIconMap: Record<string, React.ReactNode> = {
 };
 
 const Approval: React.FC = () => {
-  const { user, getPendingApprovals, getApprovalById, getFarmById, approveStage, rejectStage, getAlerts } = useAppStore();
+  const { user, getPendingApprovals, getAllApprovals, getApprovalById, getFarmById, approveStage, rejectStage, getAlerts } = useAppStore();
   const [selectedApproval, setSelectedApproval] = useState<ApprovalProcess | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [approveModalVisible, setApproveModalVisible] = useState(false);
@@ -59,7 +59,7 @@ const Approval: React.FC = () => {
   const [form] = Form.useForm();
 
   const pendingApprovals = getPendingApprovals();
-  const allApprovals = useAppStore.getState().approvals;
+  const allApprovals = getAllApprovals();
 
   const getCurrentUserCanApprove = (approval: ApprovalProcess) => {
     if (!user) return false;

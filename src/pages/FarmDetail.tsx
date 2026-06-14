@@ -24,6 +24,7 @@ import {
   PlayCircleOutlined,
   PauseCircleOutlined,
   ReloadOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { useAppStore } from '../store';
@@ -38,7 +39,8 @@ const FarmDetail = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const fromPage = searchParams.get('from') || 'monitor';
-  const { getFarmById, getHistoryData, getFertilizerData, getTransportRecords } =
+  const fromFilters = searchParams.get('filters') || '';
+  const { getFarmById, getHistoryData, getFertilizerData, getTransportRecords, user, getFarms } =
     useAppStore();
 
   const farm = useMemo(() => (id ? getFarmById(id) : undefined), [id, getFarmById]);
@@ -69,7 +71,32 @@ const FarmDetail = () => {
   }, [isPlaying, transportRecords.length]);
 
   if (!farm) {
-    return <Empty description="养殖场不存在" />;
+    return (
+      <div className="space-y-6">
+        <Button
+          icon={<ArrowLeftOutlined />}
+          onClick={() => {
+            if (fromPage === 'alert') navigate('/alert');
+            else navigate(fromFilters ? `/monitor?${fromFilters}` : '/monitor');
+          }}
+        >
+          返回列表
+        </Button>
+        <Card className="text-center py-20">
+          {!user || !id ? (
+            <>
+              <Empty description="养殖场不存在" />
+            </>
+          ) : (
+            <>
+              <LockOutlined className="text-6xl text-gray-300 mb-4" />
+              <h2 className="text-xl font-semibold text-gray-600 mb-2">无权限访问</h2>
+              <p className="text-gray-400">该养殖场不在您的管辖范围内</p>
+            </>
+          )}
+        </Card>
+      </div>
+    );
   }
 
   const getProvinceName = (code: string) =>
@@ -695,7 +722,13 @@ const FarmDetail = () => {
       <div className="flex items-center gap-4">
         <Button
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate(fromPage === 'alert' ? '/alert' : '/monitor')}
+          onClick={() => {
+            if (fromPage === 'alert') {
+              navigate('/alert');
+            } else {
+              navigate(fromFilters ? `/monitor?${fromFilters}` : '/monitor');
+            }
+          }}
         >
           返回列表
         </Button>

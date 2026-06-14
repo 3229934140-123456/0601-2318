@@ -58,6 +58,20 @@ const Monitor = () => {
   const handleSetProcess = (v: string | undefined) => { setSelectedProcess(v); syncParams(selectedProvince || '', selectedScale || '', v || '', selectedRisk || '', searchText); };
   const handleSetRisk = (v: string | undefined) => { setSelectedRisk(v); syncParams(selectedProvince || '', selectedScale || '', selectedProcess || '', v || '', searchText); };
   const handleSetSearch = (v: string) => { setSearchText(v); syncParams(selectedProvince || '', selectedScale || '', selectedProcess || '', selectedRisk || '', v); };
+  const buildFromParams = () => {
+    const sp = new URLSearchParams();
+    sp.set('from', 'monitor');
+    const filters = new URLSearchParams();
+    if (selectedProvince) filters.set('province', selectedProvince);
+    if (selectedScale) filters.set('scale', selectedScale);
+    if (selectedProcess) filters.set('process', selectedProcess);
+    if (selectedRisk) filters.set('risk', selectedRisk);
+    if (searchText) filters.set('search', searchText);
+    const filterStr = filters.toString();
+    if (filterStr) sp.set('filters', filterStr);
+    return sp.toString();
+  };
+
   const [detailModal, setDetailModal] = useState<{
     visible: boolean;
     farm: Farm | null;
@@ -238,7 +252,7 @@ const Monitor = () => {
           <Button
             type="link"
             size="small"
-            onClick={() => navigate(`/farm/${record.id}?from=monitor`)}
+            onClick={() => navigate(`/farm/${record.id}?${buildFromParams()}`)}
           >
             详情
           </Button>

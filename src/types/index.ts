@@ -42,6 +42,8 @@ export interface Farm {
   facilityComplianceRate: number;
   environmentalRiskIndex: number;
   status: FarmStatus;
+  consecutiveLowComplianceDays?: number;
+  consecutiveRiskRiseDays?: number;
 }
 
 export interface FacilityRunningParams {

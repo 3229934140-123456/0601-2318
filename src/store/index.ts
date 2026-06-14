@@ -69,6 +69,7 @@ interface AppState {
   autoEscalateAlerts: () => void;
 
   getPendingApprovals: () => ApprovalProcess[];
+  getAllApprovals: () => ApprovalProcess[];
   getApprovalById: (id: string) => ApprovalProcess | undefined;
   approveStage: (
     approvalId: string,
@@ -170,7 +171,17 @@ export const useAppStore = create<AppState>()(
       },
 
       getFarmById: (id) => {
-        return get().farms.find((f) => f.id === id);
+        const state = get();
+        const farm = state.farms.find((f) => f.id === id);
+        if (!farm) return undefined;
+        const user = state.user;
+        if (!user) return farm;
+        if (user.role === 'national') return farm;
+        if (user.role === 'provincial' && user.province) return farm.province === user.province ? farm : undefined;
+        if ((user.role === 'municipal' || user.role === 'county_epd') && user.province && user.city) return (farm.province === user.province && farm.city === user.city) ? farm : undefined;
+        if (user.role === 'provincial_agri' && user.province) return farm.province === user.province ? farm : undefined;
+        if (user.role === 'farm_owner' && user.farmId) return farm.id === user.farmId ? farm : undefined;
+        return farm;
       },
 
       selectFarm: (farm) => {
@@ -323,15 +334,17 @@ export const useAppStore = create<AppState>()(
         state.farms.forEach((farm) => {
           if (existingPendingFarmIds.has(farm.id)) return;
 
-          const shouldAlertFacility = farm.facilityComplianceRate < 70;
-          const shouldAlertEnvironment = farm.environmentalRiskIndex > 60;
+          const complianceDays = farm.consecutiveLowComplianceDays || 0;
+          const riskDays = farm.consecutiveRiskRiseDays || 0;
+          const shouldAlertFacility = complianceDays >= 3;
+          const shouldAlertEnvironment = riskDays >= 3;
 
           if (shouldAlertFacility || shouldAlertEnvironment) {
-            const durationDays = shouldAlertFacility ? 3 : 1;
             const type = shouldAlertFacility ? 'facility' : 'environment';
+            const durationDays = shouldAlertFacility ? complianceDays : riskDays;
             const triggerCondition = shouldAlertFacility
-              ? `连续${durationDays}天设施达标率低于70%`
-              : '环境风险指数持续上升超阈值';
+              ? `连续${complianceDays}天设施达标率低于70%`
+              : `连续${riskDays}天环境风险指数持续上升超阈值`;
             const triggerValue = shouldAlertFacility
               ? parseFloat(farm.facilityComplianceRate.toFixed(1))
               : parseFloat(farm.environmentalRiskIndex.toFixed(1));
@@ -471,8 +484,38 @@ export const useAppStore = create<AppState>()(
         return result;
       },
 
+      getAllApprovals: () => {
+        const state = get();
+        const user = state.user;
+        if (!user) return [];
+
+        const visibleFarmIds = new Set(state.farms.filter((f) => {
+          if (user.role === 'national') return true;
+          if (user.role === 'provincial' && user.province) return f.province === user.province;
+          if ((user.role === 'municipal' || user.role === 'county_epd') && user.province && user.city) return f.province === user.province && f.city === user.city;
+          if (user.role === 'provincial_agri' && user.province) return f.province === user.province;
+          if (user.role === 'farm_owner' && user.farmId) return f.id === user.farmId;
+          return true;
+        }).map((f) => f.id));
+
+        return state.approvals.filter((a) => visibleFarmIds.has(a.farmId));
+      },
+
       getApprovalById: (id) => {
-        return get().approvals.find((a) => a.id === id);
+        const state = get();
+        const approval = state.approvals.find((a) => a.id === id);
+        if (!approval) return undefined;
+        const user = state.user;
+        if (!user) return approval;
+        const visibleFarmIds = new Set(state.farms.filter((f) => {
+          if (user.role === 'national') return true;
+          if (user.role === 'provincial' && user.province) return f.province === user.province;
+          if ((user.role === 'municipal' || user.role === 'county_epd') && user.province && user.city) return f.province === user.province && f.city === user.city;
+          if (user.role === 'provincial_agri' && user.province) return f.province === user.province;
+          if (user.role === 'farm_owner' && user.farmId) return f.id === user.farmId;
+          return true;
+        }).map((f) => f.id));
+        return visibleFarmIds.has(approval.farmId) ? approval : undefined;
       },
 
       approveStage: (approvalId, stage, opinion, userId) => {
@@ -566,7 +609,15 @@ export const useAppStore = create<AppState>()(
       },
 
       getReportById: (id) => {
-        return get().reports.find((r) => r.id === id);
+        const state = get();
+        const report = state.reports.find((r) => r.id === id);
+        if (!report) return undefined;
+        const user = state.user;
+        if (!user || user.role === 'national') return report;
+        if (user.role === 'provincial' || user.role === 'provincial_agri') {
+          return report.scope.type === 'national' || report.scope.type === 'province' ? report : undefined;
+        }
+        return report;
       },
 
       uploadPlan: (farmId: string, data: LivestockPlan[]) => {
@@ -600,12 +651,41 @@ export const useAppStore = create<AppState>()(
         const state = get();
         const newDataMap: Record<string, RealtimeData> = {};
 
-        state.farms.slice(0, 10).forEach((farm) => {
+        const updatedFarms = state.farms.map((farm) => {
+          const prevCompliance = farm.facilityComplianceRate;
+          const prevRisk = farm.environmentalRiskIndex;
+          const newCompliance = Math.max(30, Math.min(100, prevCompliance + (Math.random() - 0.55) * 5));
+          const newRisk = Math.max(5, Math.min(95, prevRisk + (Math.random() - 0.45) * 4));
+          const newUtilRate = Math.max(30, Math.min(100, farm.resourceUtilizationRate + (Math.random() - 0.5) * 3));
+
+          const complianceBelowThreshold = newCompliance < 70;
+          const riskAboveThreshold = newRisk > 60;
+
+          const prevComplianceDays = farm.consecutiveLowComplianceDays || 0;
+          const prevRiskDays = farm.consecutiveRiskRiseDays || 0;
+
+          return {
+            ...farm,
+            resourceUtilizationRate: parseFloat(newUtilRate.toFixed(1)),
+            facilityComplianceRate: parseFloat(newCompliance.toFixed(1)),
+            environmentalRiskIndex: parseFloat(newRisk.toFixed(1)),
+            consecutiveLowComplianceDays: complianceBelowThreshold ? prevComplianceDays + 1 : 0,
+            consecutiveRiskRiseDays: riskAboveThreshold ? prevRiskDays + 1 : 0,
+            riskLevel: (complianceBelowThreshold && prevComplianceDays >= 2) || (riskAboveThreshold && prevRiskDays >= 2)
+              ? 'danger' as const
+              : complianceBelowThreshold || riskAboveThreshold
+              ? 'warning' as const
+              : 'normal' as const,
+          };
+        });
+
+        updatedFarms.slice(0, 10).forEach((farm) => {
           newDataMap[farm.id] = generateRealtimeData(farm.id);
         });
 
         set({
           realtimeDataMap: { ...state.realtimeDataMap, ...newDataMap },
+          farms: updatedFarms,
         });
 
         get().generateAutoAlerts();

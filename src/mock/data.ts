@@ -199,6 +199,8 @@ export const generateFarms = (): Farm[] => {
         ? 45 + Math.random() * 25
         : 10 + Math.random() * 30,
       status: statuses[i % 4],
+      consecutiveLowComplianceDays: isDanger ? 3 + Math.floor(Math.random() * 5) : isWarning ? 1 + Math.floor(Math.random() * 3) : 0,
+      consecutiveRiskRiseDays: isDanger ? 2 + Math.floor(Math.random() * 4) : isWarning ? 1 + Math.floor(Math.random() * 2) : 0,
     });
   }
   return farms;
@@ -505,6 +507,8 @@ export const generateForecastData = (farmId: string, planData?: LivestockPlan[])
   const wasteCoefficient =
     livestockTypes.find((t) => t.type === farm?.livestockType)?.wasteCoefficient || 5.2;
 
+  const dailyWastePerHead = wasteCoefficient / 1000;
+
   if (planData && planData.length > 0) {
     const sorted = [...planData].sort((a, b) => a.month - b.month);
     for (let i = 0; i < forecastDays; i++) {
@@ -519,7 +523,7 @@ export const generateForecastData = (farmId: string, planData?: LivestockPlan[])
       const fraction = dayInMonth / 30;
       const interpolated = Math.round(countCurrent + (countNext - countCurrent) * fraction);
       plannedLivestockCount.push(interpolated);
-      const predicted = parseFloat((interpolated * wasteCoefficient / 1000).toFixed(2));
+      const predicted = parseFloat((interpolated * dailyWastePerHead).toFixed(2));
       predictedWasteProduction.push(predicted);
       capacityGap.push(parseFloat(Math.max(0, predicted - treatmentCapacity).toFixed(2)));
     }
@@ -528,7 +532,7 @@ export const generateForecastData = (farmId: string, planData?: LivestockPlan[])
       const growthFactor = 1 + (i / forecastDays) * 0.3;
       const planned = Math.floor(baseline * growthFactor);
       plannedLivestockCount.push(planned);
-      const predicted = parseFloat((planned * wasteCoefficient).toFixed(2));
+      const predicted = parseFloat((planned * dailyWastePerHead).toFixed(2));
       predictedWasteProduction.push(predicted);
       capacityGap.push(parseFloat(Math.max(0, predicted - treatmentCapacity).toFixed(2)));
     }
