@@ -118,6 +118,7 @@ export interface ApprovalProcess {
   id: string;
   alertId: string;
   farmId: string;
+  alertLevel?: AlertLevel;
   adjustmentType: AdjustmentType;
   proposedPlan: string;
   currentStage: ApprovalStageName;

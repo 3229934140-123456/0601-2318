@@ -146,6 +146,17 @@ const Approval: React.FC = () => {
       },
     },
     {
+      title: '预警级别',
+      dataIndex: 'alertLevel',
+      key: 'alertLevel',
+      width: 100,
+      render: (level: string) => (
+        <Tag color={level === 'level2' ? 'orange' : 'blue'}>
+          {level === 'level2' ? '二级预警' : '一级预警'}
+        </Tag>
+      ),
+    },
+    {
       title: '调整类型',
       dataIndex: 'adjustmentType',
       key: 'adjustmentType',
@@ -407,7 +418,24 @@ const Approval: React.FC = () => {
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="关联预警" span={2}>
-                {selectedApproval.alertId}
+                {(() => {
+                  const alerts = getAlerts();
+                  const alert = alerts.find((a) => a.id === selectedApproval.alertId);
+                  if (!alert) {
+                    return <span className="text-gray-400">{selectedApproval.alertId}</span>;
+                  }
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Tag color={alert.level === 'level2' ? 'orange' : 'blue'}>
+                        {alert.level === 'level2' ? '二级预警' : '一级预警'}
+                      </Tag>
+                      <Tag color={alert.type === 'facility' ? 'blue' : alert.type === 'environment' ? 'orange' : 'red'}>
+                        {alert.type === 'facility' ? '设施预警' : alert.type === 'environment' ? '环境预警' : '综合预警'}
+                      </Tag>
+                      <span className="text-gray-700">{alert.triggerCondition}</span>
+                    </div>
+                  );
+                })()}
               </Descriptions.Item>
               <Descriptions.Item label="申请方案" span={2}>
                 {selectedApproval.proposedPlan}

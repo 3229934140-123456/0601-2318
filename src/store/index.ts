@@ -19,6 +19,7 @@ import {
   alerts as mockAlerts,
   approvals as mockApprovals,
   reports as mockReports,
+  provinces,
   generateRealtimeData,
   generateHistoryData,
   generateFertilizerData,
@@ -86,6 +87,7 @@ interface AppState {
 
   getReports: () => DiagnosticReport[];
   getReportById: (id: string) => DiagnosticReport | undefined;
+  getHeatmapData: () => HeatmapItem[];
 
   uploadPlan: (farmId: string, data: LivestockPlan[]) => {
     success: boolean;
@@ -271,6 +273,11 @@ export const useAppStore = create<AppState>()(
         const alert = state.alerts.find((a) => a.id === alertId);
         if (!alert) return;
 
+        const existingApproval = state.approvals.find(
+          (a) => a.alertId === alertId && a.currentStage !== 'completed' && a.currentStage !== 'rejected'
+        );
+        if (existingApproval) return;
+
         const alerts = state.alerts.map((a) => {
           if (a.id === alertId) {
             return {
@@ -283,7 +290,7 @@ export const useAppStore = create<AppState>()(
                   action: '升级二级预警',
                   operator: 'system',
                   timestamp: Date.now(),
-                  remark: '5天内未改善，自动升级',
+                  remark: '手动升级，启动三级审批流程',
                 },
               ],
             };
@@ -295,6 +302,7 @@ export const useAppStore = create<AppState>()(
           id: `approval_${String(state.approvals.length + 1).padStart(3, '0')}`,
           alertId,
           farmId: alert.farmId,
+          alertLevel: 'level2',
           adjustmentType: 'process_change',
           proposedPlan: '建议升级处理设施或限制生产规模',
           currentStage: 'farm_owner',
@@ -415,20 +423,26 @@ export const useAppStore = create<AppState>()(
           }
 
           alertsChanged = true;
-          newApprovals.push({
-            id: `approval_auto_${alert.farmId}_${now}`,
-            alertId: alert.id,
-            farmId: alert.farmId,
-            adjustmentType: alert.type === 'facility' ? 'process_change' : 'production_limit',
-            proposedPlan: '5天整改期满未改善，建议调整处理工艺或限制生产规模',
-            currentStage: 'farm_owner',
-            stages: [
-              { id: 'stage_1', stageName: 'farm_owner', status: 'pending' },
-              { id: 'stage_2', stageName: 'county_epd', status: 'pending' },
-              { id: 'stage_3', stageName: 'provincial_agri', status: 'pending' },
-            ],
-            createdAt: now,
-          });
+          const hasActiveApproval = state.approvals.some(
+            (a) => a.alertId === alert.id && a.currentStage !== 'completed' && a.currentStage !== 'rejected'
+          );
+          if (!hasActiveApproval) {
+            newApprovals.push({
+              id: `approval_auto_${alert.farmId}_${now}`,
+              alertId: alert.id,
+              farmId: alert.farmId,
+              alertLevel: 'level2',
+              adjustmentType: alert.type === 'facility' ? 'process_change' : 'production_limit',
+              proposedPlan: '5天整改期满未改善，建议调整处理工艺或限制生产规模',
+              currentStage: 'farm_owner',
+              stages: [
+                { id: 'stage_1', stageName: 'farm_owner', status: 'pending' },
+                { id: 'stage_2', stageName: 'county_epd', status: 'pending' },
+                { id: 'stage_3', stageName: 'provincial_agri', status: 'pending' },
+              ],
+              createdAt: now,
+            });
+          }
 
           return {
             ...alert,
@@ -587,23 +601,23 @@ export const useAppStore = create<AppState>()(
       getReports: () => {
         const state = get();
         const user = state.user;
-        let result = [...state.reports];
+        if (!user) return [];
 
-        if (user && user.role !== 'national') {
+        const result = state.reports.filter((r) => {
+          if (user.role === 'national') return true;
           if (user.role === 'provincial' || user.role === 'provincial_agri') {
-            result = result.filter((r) =>
-              r.scope.type === 'national' || r.scope.type === 'province'
-            );
-          } else if (user.role === 'municipal' || user.role === 'county_epd') {
-            result = result.filter((r) =>
-              r.scope.type === 'national' || r.scope.type === 'province' || r.scope.type === 'city'
-            );
-          } else if (user.role === 'farm_owner') {
-            result = result.filter((r) =>
-              r.scope.type === 'national' || r.scope.type === 'province' || r.scope.type === 'city'
-            );
+            return r.scope.type === 'province' && r.scope.region === user.province;
           }
-        }
+          if (user.role === 'municipal' || user.role === 'county_epd') {
+            return r.scope.type === 'city' && r.scope.region === `${user.province}${user.city || ''}`.slice(0, 4);
+          }
+          if (user.role === 'farm_owner' && user.farmId) {
+            const farm = state.farms.find((f) => f.id === user.farmId);
+            if (!farm) return false;
+            return r.scope.type === 'city' && r.scope.region === `${farm.province}${farm.city || ''}`.slice(0, 4);
+          }
+          return false;
+        });
 
         return result.sort((a, b) => b.endDate - a.endDate);
       },
@@ -613,11 +627,82 @@ export const useAppStore = create<AppState>()(
         const report = state.reports.find((r) => r.id === id);
         if (!report) return undefined;
         const user = state.user;
-        if (!user || user.role === 'national') return report;
+        if (!user) return undefined;
+        if (user.role === 'national') return report;
         if (user.role === 'provincial' || user.role === 'provincial_agri') {
-          return report.scope.type === 'national' || report.scope.type === 'province' ? report : undefined;
+          return (report.scope.type === 'province' && report.scope.region === user.province) ? report : undefined;
         }
-        return report;
+        if (user.role === 'municipal' || user.role === 'county_epd') {
+          const cityCode = `${user.province}${user.city || ''}`.slice(0, 4);
+          return (report.scope.type === 'city' && report.scope.region === cityCode) ? report : undefined;
+        }
+        if (user.role === 'farm_owner' && user.farmId) {
+          const farm = state.farms.find((f) => f.id === user.farmId);
+          if (!farm) return undefined;
+          const cityCode = `${farm.province}${farm.city || ''}`.slice(0, 4);
+          return (report.scope.type === 'city' && report.scope.region === cityCode) ? report : undefined;
+        }
+        return undefined;
+      },
+
+      getHeatmapData: () => {
+        const state = get();
+        const user = state.user;
+        const allFarms = state.farms;
+
+        if (!user || user.role === 'national') {
+          return state.heatmapData;
+        }
+
+        if (user.role === 'provincial' || user.role === 'provincial_agri') {
+          const provinceFarms = allFarms.filter((f) => f.province === user.province);
+          const avgUtil = provinceFarms.length > 0
+            ? provinceFarms.reduce((s, f) => s + f.resourceUtilizationRate, 0) / provinceFarms.length
+            : 0;
+          return state.heatmapData.filter((h) => {
+            const province = provinces.find((p) => p.name === h.province);
+            return province?.code === user.province;
+          }).map((h) => ({
+            ...h,
+            avgUtilizationRate: parseFloat(avgUtil.toFixed(1)),
+            farmCount: provinceFarms.length,
+          }));
+        }
+
+        if (user.role === 'municipal' || user.role === 'county_epd') {
+          const cityFarms = allFarms.filter(
+            (f) => f.province === user.province && f.city === user.city
+          );
+          const avgUtil = cityFarms.length > 0
+            ? cityFarms.reduce((s, f) => s + f.resourceUtilizationRate, 0) / cityFarms.length
+            : 0;
+          return [
+            {
+              province: '本市',
+              provinceCode: user.city || '01',
+              value: cityFarms.length,
+              farmCount: cityFarms.length,
+              avgUtilizationRate: parseFloat(avgUtil.toFixed(1)),
+            },
+          ];
+        }
+
+        if (user.role === 'farm_owner' && user.farmId) {
+          const farm = allFarms.find((f) => f.id === user.farmId);
+          if (farm) {
+            return [
+              {
+                province: farm.name,
+                provinceCode: farm.id,
+                value: 1,
+                farmCount: 1,
+                avgUtilizationRate: farm.resourceUtilizationRate,
+              },
+            ];
+          }
+        }
+
+        return [];
       },
 
       uploadPlan: (farmId: string, data: LivestockPlan[]) => {

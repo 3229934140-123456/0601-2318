@@ -164,21 +164,24 @@ export const generateFarms = (): Farm[] => {
       dailyWasteProduction: parseFloat(
         (
           livestockType.wasteCoefficient *
-          (scale === 'large' ? 5000 : scale === 'medium' ? 1000 : 200)
+          (scale === 'large' ? 5000 : scale === 'medium' ? 1000 : 200) /
+          1000
         ).toFixed(2)
       ),
       treatmentCapacity: parseFloat(
         (
           livestockType.wasteCoefficient *
           (scale === 'large' ? 5000 : scale === 'medium' ? 1000 : 200) *
-          processType.efficiency
+          processType.efficiency /
+          1000
         ).toFixed(2)
       ),
       organicFertilizerCapacity: parseFloat(
         (
           livestockType.wasteCoefficient *
           (scale === 'large' ? 5000 : scale === 'medium' ? 1000 : 200) *
-          0.3
+          0.3 /
+          1000
         ).toFixed(2)
       ),
       coordinates: [parseFloat(baseLat.toFixed(4)), parseFloat(baseLng.toFixed(4))],
@@ -259,6 +262,7 @@ export const generateApprovals = (): ApprovalProcess[] => {
     id: `approval_${String(index + 1).padStart(3, '0')}`,
     alertId: alert.id,
     farmId: alert.farmId,
+    alertLevel: alert.level,
     adjustmentType: index % 2 === 0 ? 'process_change' : 'production_limit',
     proposedPlan:
       index % 2 === 0
@@ -300,18 +304,24 @@ export const approvals = generateApprovals();
 export const generateReports = (): DiagnosticReport[] => {
   const reports: DiagnosticReport[] = [];
   const now = Date.now();
+  const reportScopes = [
+    { type: 'national' as const, region: undefined },
+    { type: 'province' as const, region: '37' },
+    { type: 'province' as const, region: '32' },
+    { type: 'province' as const, region: '44' },
+    { type: 'city' as const, region: '3716' },
+    { type: 'city' as const, region: '3201' },
+    { type: 'city' as const, region: '4403' },
+  ];
 
-  for (let i = 0; i < 8; i++) {
-    const weekOffset = i * 7 * 24 * 60 * 60 * 1000;
+  for (let i = 0; i < reportScopes.length; i++) {
+    const scope = reportScopes[i];
     reports.push({
       id: `report_${String(i + 1).padStart(3, '0')}`,
       period: 'weekly',
-      startDate: now - weekOffset - 7 * 24 * 60 * 60 * 1000,
-      endDate: now - weekOffset,
-      scope: {
-        type: i === 0 ? 'national' : i === 1 ? 'province' : 'city',
-        region: i === 0 ? undefined : i === 1 ? '37' : '3716',
-      },
+      startDate: now - 7 * 24 * 60 * 60 * 1000,
+      endDate: now,
+      scope,
       summary: {
         resourceUtilizationRate: {
           current: parseFloat((78 + Math.random() * 15).toFixed(1)),

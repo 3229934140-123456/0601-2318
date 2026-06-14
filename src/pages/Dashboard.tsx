@@ -23,7 +23,7 @@ const Dashboard = () => {
   );
   const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
   const [selectedProcess, setSelectedProcess] = useState<string | undefined>();
-  const { nationalMetrics, heatmapData, getFarms, getAlerts, simulateRealtimeUpdate, user } =
+  const { nationalMetrics, getHeatmapData, getFarms, getAlerts, simulateRealtimeUpdate, user } =
     useAppStore();
 
   useEffect(() => {
@@ -74,6 +74,8 @@ const Dashboard = () => {
         return '资源化利用率';
     }
   };
+
+  const heatmapData = getHeatmapData();
 
   const getMetricValue = (item: (typeof heatmapData)[0]) => {
     switch (metricType) {
