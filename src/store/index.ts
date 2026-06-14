@@ -614,7 +614,15 @@ export const useAppStore = create<AppState>()(
           if (user.role === 'farm_owner' && user.farmId) {
             const farm = state.farms.find((f) => f.id === user.farmId);
             if (!farm) return false;
-            return r.scope.type === 'city' && r.scope.region === `${farm.province}${farm.city || ''}`.slice(0, 4);
+            if (r.scope.type === 'farm') {
+              return r.scope.farmId === user.farmId;
+            }
+            const cityCode = `${farm.province}${farm.city || ''}`.slice(0, 4);
+            const hasFarmLevel = state.reports.some(
+              (rr) => rr.scope.type === 'farm' && rr.scope.farmId === user.farmId
+            );
+            if (hasFarmLevel) return false;
+            return r.scope.type === 'city' && r.scope.region === cityCode;
           }
           return false;
         });
@@ -639,7 +647,14 @@ export const useAppStore = create<AppState>()(
         if (user.role === 'farm_owner' && user.farmId) {
           const farm = state.farms.find((f) => f.id === user.farmId);
           if (!farm) return undefined;
+          if (report.scope.type === 'farm') {
+            return report.scope.farmId === user.farmId ? report : undefined;
+          }
           const cityCode = `${farm.province}${farm.city || ''}`.slice(0, 4);
+          const hasFarmLevel = state.reports.some(
+            (rr) => rr.scope.type === 'farm' && rr.scope.farmId === user.farmId
+          );
+          if (hasFarmLevel) return undefined;
           return (report.scope.type === 'city' && report.scope.region === cityCode) ? report : undefined;
         }
         return undefined;

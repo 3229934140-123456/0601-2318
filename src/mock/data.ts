@@ -304,40 +304,75 @@ export const approvals = generateApprovals();
 export const generateReports = (): DiagnosticReport[] => {
   const reports: DiagnosticReport[] = [];
   const now = Date.now();
-  const reportScopes = [
-    { type: 'national' as const, region: undefined },
-    { type: 'province' as const, region: '37' },
-    { type: 'province' as const, region: '32' },
-    { type: 'province' as const, region: '44' },
-    { type: 'city' as const, region: '3716' },
-    { type: 'city' as const, region: '3201' },
-    { type: 'city' as const, region: '4403' },
+  const reportScopes: Array<{
+    type: 'national' | 'province' | 'city' | 'farm';
+    region?: string;
+    farmId?: string;
+  }> = [
+    { type: 'national' },
+    { type: 'province', region: '37' },
+    { type: 'province', region: '32' },
+    { type: 'province', region: '44' },
+    { type: 'city', region: '3716' },
+    { type: 'city', region: '3201' },
+    { type: 'city', region: '4403' },
+    { type: 'farm', region: '1101', farmId: 'farm_001' },
+    { type: 'farm', region: '1201', farmId: 'farm_002' },
+    { type: 'farm', region: '1301', farmId: 'farm_003' },
+    { type: 'farm', region: '1401', farmId: 'farm_004' },
+    { type: 'farm', region: '1501', farmId: 'farm_005' },
   ];
 
   for (let i = 0; i < reportScopes.length; i++) {
     const scope = reportScopes[i];
+    let targetFarm: Farm | undefined;
+    if (scope.type === 'farm' && scope.farmId) {
+      targetFarm = farms.find((f) => f.id === scope.farmId);
+    }
     reports.push({
       id: `report_${String(i + 1).padStart(3, '0')}`,
       period: 'weekly',
       startDate: now - 7 * 24 * 60 * 60 * 1000,
       endDate: now,
-      scope,
+      scope: {
+        type: scope.type,
+        region: scope.region,
+        farmId: (scope as any).farmId,
+      },
       summary: {
-        resourceUtilizationRate: {
-          current: parseFloat((78 + Math.random() * 15).toFixed(1)),
-          yoy: parseFloat((-2 + Math.random() * 5).toFixed(1)),
-          mom: parseFloat((-1 + Math.random() * 3).toFixed(1)),
-        },
-        facilityComplianceRate: {
-          current: parseFloat((82 + Math.random() * 12).toFixed(1)),
-          yoy: parseFloat((-1 + Math.random() * 4).toFixed(1)),
-          mom: parseFloat((0.5 + Math.random() * 2).toFixed(1)),
-        },
-        alertCount: {
-          level1: 8 + Math.floor(Math.random() * 5),
-          level2: 2 + Math.floor(Math.random() * 3),
-          total: 10 + Math.floor(Math.random() * 8),
-        },
+        resourceUtilizationRate: targetFarm
+          ? {
+              current: parseFloat(targetFarm.resourceUtilizationRate.toFixed(1)),
+              yoy: parseFloat((-2 + Math.random() * 5).toFixed(1)),
+              mom: parseFloat((-1 + Math.random() * 3).toFixed(1)),
+            }
+          : {
+              current: parseFloat((78 + Math.random() * 15).toFixed(1)),
+              yoy: parseFloat((-2 + Math.random() * 5).toFixed(1)),
+              mom: parseFloat((-1 + Math.random() * 3).toFixed(1)),
+            },
+        facilityComplianceRate: targetFarm
+          ? {
+              current: parseFloat(targetFarm.facilityComplianceRate.toFixed(1)),
+              yoy: parseFloat((-1 + Math.random() * 4).toFixed(1)),
+              mom: parseFloat((0.5 + Math.random() * 2).toFixed(1)),
+            }
+          : {
+              current: parseFloat((82 + Math.random() * 12).toFixed(1)),
+              yoy: parseFloat((-1 + Math.random() * 4).toFixed(1)),
+              mom: parseFloat((0.5 + Math.random() * 2).toFixed(1)),
+            },
+        alertCount: targetFarm
+          ? {
+              level1: alerts.filter((a) => a.farmId === targetFarm!.id && a.level === 'level1').length,
+              level2: alerts.filter((a) => a.farmId === targetFarm!.id && a.level === 'level2').length,
+              total: alerts.filter((a) => a.farmId === targetFarm!.id).length,
+            }
+          : {
+              level1: 8 + Math.floor(Math.random() * 5),
+              level2: 2 + Math.floor(Math.random() * 3),
+              total: 10 + Math.floor(Math.random() * 8),
+            },
       },
       facilityFaultDistribution: [
         { type: '设备老化', count: 12, percentage: 30 },

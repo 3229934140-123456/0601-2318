@@ -23,7 +23,7 @@ const Dashboard = () => {
   );
   const [selectedProvince, setSelectedProvince] = useState<string | undefined>();
   const [selectedProcess, setSelectedProcess] = useState<string | undefined>();
-  const { nationalMetrics, getHeatmapData, getFarms, getAlerts, simulateRealtimeUpdate, user } =
+  const { getHeatmapData, getFarms, getAlerts, simulateRealtimeUpdate, user } =
     useAppStore();
 
   useEffect(() => {
@@ -41,16 +41,58 @@ const Dashboard = () => {
   const scopedMetrics = useMemo(() => {
     const util = farms.length > 0
       ? farms.reduce((s, f) => s + f.resourceUtilizationRate, 0) / farms.length
-      : nationalMetrics.resourceUtilizationRate;
+      : 0;
     const comp = farms.length > 0
       ? farms.reduce((s, f) => s + f.facilityComplianceRate, 0) / farms.length
-      : nationalMetrics.facilityComplianceRate;
+      : 0;
     const risk = farms.length > 0
       ? farms.reduce((s, f) => s + f.environmentalRiskIndex, 0) / farms.length
-      : nationalMetrics.environmentalRiskIndex;
+      : 0;
     const active = farms.filter((f) => f.status === 'active').length;
-    return { resourceUtilizationRate: parseFloat(util.toFixed(1)), facilityComplianceRate: parseFloat(comp.toFixed(1)), environmentalRiskIndex: parseFloat(risk.toFixed(1)), activeFarms: active };
-  }, [farms, nationalMetrics]);
+    return {
+      resourceUtilizationRate: parseFloat(util.toFixed(1)),
+      facilityComplianceRate: parseFloat(comp.toFixed(1)),
+      environmentalRiskIndex: parseFloat(risk.toFixed(1)),
+      activeFarms: active,
+      totalFarms: farms.length,
+    };
+  }, [farms]);
+
+  const availableProvinces = useMemo(() => {
+    if (!user) return provinces;
+    if (user.role === 'national') return provinces;
+    if (user.role === 'provincial' || user.role === 'provincial_agri') {
+      return provinces.filter((p) => p.code === user.province);
+    }
+    if (user.role === 'municipal' || user.role === 'county_epd') {
+      return provinces.filter((p) => p.code === user.province);
+    }
+    return [];
+  }, [user]);
+
+  const availableProcessTypes = useMemo(() => {
+    if (!user) return processTypes;
+    const scopedFarms = getFarms();
+    const codes = new Set(scopedFarms.map((f) => f.processType));
+    return processTypes.filter((p) => codes.has(p.code));
+  }, [user, getFarms]);
+
+  const showProvinceFilter = !!user && (user.role === 'national' || user.role === 'provincial' || user.role === 'provincial_agri');
+  const showProcessFilter = !!user && user.role !== 'farm_owner';
+
+  useEffect(() => {
+    if (!user) return;
+    if ((user.role === 'provincial' || user.role === 'provincial_agri') && user.province) {
+      setSelectedProvince(user.province);
+    }
+    if ((user.role === 'municipal' || user.role === 'county_epd') && user.province) {
+      setSelectedProvince(user.province);
+    }
+    if (user.role === 'farm_owner') {
+      setSelectedProvince(undefined);
+      setSelectedProcess(undefined);
+    }
+  }, [user]);
 
   const topRiskFarms = useMemo(
     () =>
@@ -323,30 +365,37 @@ const Dashboard = () => {
           </Select>
         </div>
         <div className="flex gap-4">
-          <Select
-            placeholder="选择省份"
-            allowClear
-            style={{ width: 140 }}
-            onChange={setSelectedProvince}
-          >
-            {provinces.map((p) => (
-              <Option key={p.code} value={p.code}>
-                {p.name}
-              </Option>
-            ))}
-          </Select>
-          <Select
-            placeholder="处理工艺"
-            allowClear
-            style={{ width: 140 }}
-            onChange={setSelectedProcess}
-          >
-            {processTypes.map((p) => (
-              <Option key={p.code} value={p.code}>
-                {p.name}
-              </Option>
-            ))}
-          </Select>
+          {showProvinceFilter && (
+            <Select
+              placeholder="选择省份"
+              allowClear={user?.role === 'national'}
+              disabled={user?.role !== 'national'}
+              style={{ width: 140 }}
+              value={selectedProvince}
+              onChange={setSelectedProvince}
+            >
+              {availableProvinces.map((p) => (
+                <Option key={p.code} value={p.code}>
+                  {p.name}
+                </Option>
+              ))}
+            </Select>
+          )}
+          {showProcessFilter && (
+            <Select
+              placeholder="处理工艺"
+              allowClear
+              style={{ width: 140 }}
+              value={selectedProcess}
+              onChange={setSelectedProcess}
+            >
+              {availableProcessTypes.map((p) => (
+                <Option key={p.code} value={p.code}>
+                  {p.name}
+                </Option>
+              ))}
+            </Select>
+          )}
         </div>
       </div>
 
@@ -633,10 +682,9 @@ const Dashboard = () => {
           <Col xs={12} sm={8} md={4}>
             <div className="text-center p-4 bg-gradient-to-br from-teal-50 to-emerald-50 rounded-xl">
               <div className="text-3xl font-bold text-teal-600">
-                {(
-                  (farms.filter((f) => f.status === 'active').length / farms.length) *
-                  100
-                ).toFixed(1)}
+                {farms.length > 0
+                  ? ((farms.filter((f) => f.status === 'active').length / farms.length) * 100).toFixed(1)
+                  : '0.0'}
                 %
               </div>
               <div className="text-sm text-gray-500 mt-1">开工率</div>

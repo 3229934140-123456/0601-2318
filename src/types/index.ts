@@ -127,7 +127,7 @@ export interface ApprovalProcess {
   completedAt?: number;
 }
 
-export type ReportScopeType = 'national' | 'province' | 'city';
+export type ReportScopeType = 'national' | 'province' | 'city' | 'farm';
 
 export interface DiagnosticReport {
   id: string;
@@ -137,6 +137,7 @@ export interface DiagnosticReport {
   scope: {
     type: ReportScopeType;
     region?: string;
+    farmId?: string;
   };
   summary: {
     resourceUtilizationRate: {

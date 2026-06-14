@@ -41,6 +41,7 @@ const scopeTypeMap: Record<string, string> = {
   national: '全国',
   province: '省级',
   city: '市级',
+  farm: '单场',
 };
 
 const categoryMap: Record<string, string> = {
@@ -256,12 +257,20 @@ const Reports: React.FC = () => {
       title: '统计范围',
       dataIndex: 'scope',
       key: 'scope',
-      width: 120,
-      render: (scope: DiagnosticReport['scope']) => (
-        <Tag color={scope.type === 'national' ? 'purple' : scope.type === 'province' ? 'blue' : 'green'}>
-          {scopeTypeMap[scope.type]}
-        </Tag>
-      ),
+      width: 140,
+      render: (scope: DiagnosticReport['scope']) => {
+        const color = scope.type === 'national'
+          ? 'purple'
+          : scope.type === 'province'
+          ? 'blue'
+          : scope.type === 'city'
+          ? 'green'
+          : 'cyan';
+        const label = scope.type === 'farm' && scope.farmId
+          ? `单场(${scope.farmId})`
+          : scopeTypeMap[scope.type];
+        return <Tag color={color}>{label}</Tag>;
+      },
     },
     {
       title: '报告周期',
@@ -431,7 +440,9 @@ const Reports: React.FC = () => {
           <Card className="shadow-sm">
             <Statistic
               title={<span className="text-gray-600"><RiseOutlined className="mr-2" />平均资源化利用率</span>}
-              value={(reports.reduce((sum, r) => sum + r.summary.resourceUtilizationRate.current, 0) / reports.length).toFixed(1)}
+              value={reports.length > 0
+                ? (reports.reduce((sum, r) => sum + r.summary.resourceUtilizationRate.current, 0) / reports.length).toFixed(1)
+                : '0.0'}
               suffix="%"
               valueStyle={{ color: '#059669' }}
             />
@@ -441,7 +452,9 @@ const Reports: React.FC = () => {
           <Card className="shadow-sm">
             <Statistic
               title={<span className="text-gray-600"><CheckCircleOutlined className="mr-2" />平均设施达标率</span>}
-              value={(reports.reduce((sum, r) => sum + r.summary.facilityComplianceRate.current, 0) / reports.length).toFixed(1)}
+              value={reports.length > 0
+                ? (reports.reduce((sum, r) => sum + r.summary.facilityComplianceRate.current, 0) / reports.length).toFixed(1)
+                : '0.0'}
               suffix="%"
               valueStyle={{ color: '#0891B2' }}
             />
